@@ -1,0 +1,49 @@
+This repository is an UNOFFICIAL, modified build. It is not affiliated with or endorsed by
+ggml-org, the llama.cpp maintainers, or PrismML.
+
+What it is:
+  A copy of the PrismML fork of llama.cpp (base revision prism-b10743-adfffbe, 2026-09-25) with
+  additional single-GPU (NVIDIA Tesla V100, compute capability 7.0) decode tuning, plus an MTP
+  speculative-decoding recipe and the tooling used to validate it. See bonsai-v100/.
+
+Base and third-party components (all licenses retained in this tree):
+
+* llama.cpp — MIT License, Copyright (c) 2023-2026 The ggml authors
+  https://github.com/ggml-org/llama.cpp
+
+* PrismML fork of llama.cpp — MIT License (same LICENSE file). This tree is based on it; the fork
+  provides the ternary low-bit formats (PQ2_0 / PTQ1_0), the Bonsai model support and much of the
+  kernel work that these changes build on.
+  https://github.com/PrismML-Eng/llama.cpp
+
+* cyyself fork of llama.cpp — MIT License (same LICENSE file). The following files in this tree are
+  derived from it (ported verbatim in an earlier round of this work):
+    ggml/src/ggml-cuda/mmq-config-pascal-dp4a.cuh
+    ggml/src/ggml-cuda/mmq-config-pascal-older.cuh
+    ggml/src/ggml-cuda/fattn-swizzle.cuh
+    ggml/src/ggml-cuda/moe-weighted-reduction.cu
+    ggml/src/ggml-cuda/moe-weighted-reduction.cuh
+  https://github.com/cyyself/llama.cpp
+
+* Other bundled components keep their own licenses and notices, unchanged:
+    licenses/LICENSE-jsonhpp                      MIT (Niels Lohmann)
+    gguf-py/LICENSE                              MIT (Georgi Gerganov)
+    vendor/cpp-httplib/LICENSE                   MIT
+    vendor/hash/xxhash/LICENSE                   BSD 2-Clause (Yann Collet)
+    vendor/hash/rotate-bits/LICENSE.md           MIT
+    vendor/hash/sha256/LICENSE                   public domain
+    tools/ui/src/lib/vendors/...                 MIT / public domain
+    ggml/src/ggml-sycl/...                       Apache-2.0 headers (Intel oneAPI / DPCT) — unmodified here
+
+* MTP speculative decoding (bonsai-v100/mtp/): the graft tool is from
+  decent-jawfish/bonsai-2-27b-mtp (Apache-2.0); the MTP tensors it downloads come from
+  unsloth/Qwen3.8-27B-GGUF (Apache-2.0). The upstream MTP fixes this relies on are PrismML PR #205.
+    https://huggingface.co/decent-jawfish/bonsai-2-27b-mtp
+    https://huggingface.co/unsloth/Qwen3.8-27B-GGUF
+    https://github.com/PrismML-Eng/llama.cpp/pull/205
+
+* Models are not included in this repository. Bonsai 2 27B is published by prism-ml
+  (Apache-2.0): https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf
+
+No warranty. The modifications in bonsai-v100/ are provided as-is under the same MIT license as the
+rest of this tree.

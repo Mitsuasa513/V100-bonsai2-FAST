@@ -1,0 +1,5 @@
+# Patches are applied with `git apply` and must stay byte-exact.
+*.patch -text
+# Windows launchers stay CRLF so they behave when double-clicked.
+*.cmd text eol=crlf
+*.bat text eol=crlf
