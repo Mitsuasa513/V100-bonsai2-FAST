@@ -10,6 +10,88 @@
 > how it was measured (Bonsai 2 27B ternary: +5.7% decode from the CUDA work, +41% more with MTP).
 >
 > If you want the unmodified base, use the upstream repositories above.
+>
+> Unofficial Tesla V100 (sm_70) tuning of the PrismML llama.cpp fork for ternary Bonsai 2 27B: bit-exact CUDA fusions + MTP speculative decoding, with the full measurement log.  
+>【重要提示！】
+非官方 V100 调优版本 —— 与 ggml-org 及 PrismML 无关联，亦未获其认可。
+本代码树是 llama.cpp 的 PrismML 分支（基础版本 prism-b10743-adfffbe，2026-09-25）的修改副本，加入了未公开的单 GPU（Tesla V100 / sm_70）解码调优，以及若干从 cyyself 分支 移植的文件。所有上游及第三方许可证与版权声明均原样保留：llama.cpp 与 PrismML 分支均为 MIT 许可（© 2023-2026 The ggml authors）。完整的署名列表见 NOTICE，具体改动了什么、如何测量，见 [README.md](bonsai-v100/README.md)（Bonsai 2 27B 三值模型：CUDA 优化使解码速度提升 5.7%，配合 MTP 再提升 41%）。
+若需要未修改的基础版本，请使用上述上游仓库。
+面向三值 Bonsai 2 27B 的 PrismML llama.cpp 分支非官方 Tesla V100（sm_70）调优：位精确（bit-exact）CUDA 融合 + MTP 推测解码，并附完整测量日志。
+> ## V100 Bonsai2 Fast —— MAXPOWER UP TO 85 tokens on single v100 card.
+> ## V100 Bonsai2 Fast —— 单卡火力全开最高可达每秒钟85词元.
+> ## Performance / 性能实测
+
+**Test bed / 测试环境**: Tesla V100-SXM2 32 GB (sm_70) · CUDA 12.6 · MSVC 14.44 · Windows ·
+PrismML llama.cpp fork `prism-b10743-adfffbe` · model **Ternary-Bonsai-2-27B-PQ2_0** (2.13 bpw
+ternary, hybrid attention).
+**Flags / 参数**: `-ngl 99 -fa 1`, greedy (`--temp 0`), single stream / 单流.
+**Method / 方法**: every A/B is interleaved over multiple rounds and reported as best-of + median —
+the machine is shared, single runs drift by ~1.4%. Reproduce with `bonsai-v100/tools/`.
+
+### 1. Decode & prefill / 解码与预填 (`llama-bench` tg128, graphs off)
+
+| Configuration / 配置 | d=0 | 90K | d=0 pp512 | 90K pp512 |
+|---|---:|---:|---:|---:|
+| Handover baseline / 交接基线 | 58.89 | 38.31 | 787.65 | 488.92 |
+| Reference arm of this build / 本构建参考臂 (`GGML_CUDA_GDN_ROWS_READ=0`) | 63.03 ± 0.19 | 39.99 ± 0.08 | 814.75 | 504.47 |
+| **This build, all fusions on / 全开** | **66.47 ± 0.10** | **41.21 ± 0.07** | **818.47** | **505.90** |
+| Δ vs reference arm / 相对参考臂 | **+5.46%** | **+3.05%** | +0.46% | +0.28% |
+| Δ vs handover baseline / 相对交接基线 | **+12.9%** | **+7.6%** | +3.9% | +3.5% |
+
+At 32K the handover baseline was 49.27 t/s / 647.30 t/s prefill; the MTP table below was measured
+with a different harness (`llama-cli`, 128 generated tokens) and is not additive with this one.
+32K 的交接基线是 49.27 / 647.30；下面 MTP 那张表用的是 `llama-cli`（不同口径），两者不可相加。
+
+### 2. Where the decode time goes / 单个 token 的时间去向 (ncu, 260 matvec launches ≈ 1 token)
+
+| Metric / 指标 | Value / 数值 |
+|---|---:|
+| Weights read per token / 每 token 读取权重 | 6.80 GB |
+| Matvec kernel time / 权重 matvec 内核时间 | 10.57 ms (68% of the token) |
+| Effective bandwidth / 等效带宽 | 607 GB/s |
+| DRAM utilisation / 显存带宽占用 | 61–75% |
+| SM / issue utilisation / 发射槽占用 | 42–64% |
+
+### 3. Individual fusions / 各项融合 (A/B on the same build)
+
+| Fusion / 融合项 | Switch / 关闭开关 | Gain / 收益 |
+|---|---|---:|
+| GDN state read by row index / GDN 行索引读状态 | `GGML_CUDA_GDN_ROWS_READ=0` | +2.9% |
+| conv-state gather + concat, write-back folded / conv 状态合并与写回折叠 | `GGML_CUDA_CONV_STATE_FUSION=0` | +1.9% |
+| `[ADD, RMS_NORM, MUL]` on Volta | `GGML_CUDA_ADD_RMS_NORM=0` | +0.4…0.8% |
+| `ssm_alpha` / `ssm_beta` matvec pair / 配对 launch | `GGML_CUDA_MMVF_PAIR=0` | +0.6…1.8% (acceptance run +3.00%) |
+| de-interleaving GLU store / GLU 去交织写 | `GGML_CUDA_GLU_PERMUTE=0` | +0.5…0.9% |
+| L2-norm folded into the pair launch | `GGML_CUDA_CONV_L2=0` | ≈ +0.5% |
+| FWHT → q8_1 pre-quantisation / 量化折进 FWHT | `GGML_CUDA_FWHT_Q8_1=0` | 0.0% (d=0) · +0.71% (90K) |
+
+### 4. MTP speculative decoding / MTP 投机解码
+
+Grafted Qwen3.8-27B MTP head (`bonsai-v100/mtp/`), `llama-cli` greedy, graphs off; numbers are t/s
+with the gain over the same harness without MTP. / 嫁接 MTP 头，`llama-cli` 贪心，括号内为同口径收益。
+
+| Depth / 深度 | no MTP | n-max 1 | n-max 2 | n-max 3 | n-max 4 | n-max 6 |
+|---|---:|---:|---:|---:|---:|---:|
+| d=0 (512 tok, 4 rounds) | 60.90 | 74.60 (+22.5%) | 72.30 (+18.7%) | 83.90 (+37.1%) | **86.70 (+40.7%)** | 82.40 (+35.0%) |
+| 32K (128 tok, 3 rounds) | 51.2 | 65.6 (+28.1%) | 67.5 (+31.8%) | **68.1 (+33.0%)** | 65.0 (+25.7%) | — |
+| 96K (128 tok, 2 rounds) | 37.6 | **44.5 (+18.4%)** | 44.4 (+18.1%) | 44.2 (+17.6%) | 37.0 (−2.9%) | 34.8 (−7.4%) |
+
+Acceptance rate / 验收率: **75%** at d=0 (n-max 4) · 64% short chat · 36% at ~100K.
+Correctness / 正确性: greedy output is **byte-identical** with and without MTP at every depth, and
+the grafted trunk is bit-identical to the stock file (6 208 000 logits).
+贪心输出与不开 MTP **逐字节相同**；嫁接后的主干与原文件 logits **逐位一致**。
+
+### 5. Full-window server / 满窗服务 (262144 ctx, q8_0 KV, `-np 1`)
+
+| Metric / 指标 | Value / 数值 |
+|---|---:|
+| VRAM | 19.3 GB |
+| Prefill / 预填 | 577 t/s (101 003 tok in 175 s) ⇒ ~7.5 min to fill 262 K |
+| 100K chat + summarize, no MTP | 35.3 t/s |
+| 100K chat + summarize, MTP n-max 3 / 1 | 31.6 / 31.6 t/s (acceptance 36% / 59%) |
+
+⇒ keep MTP on for chat and short/medium prompts, turn it off for long-document work.
+聊天与短中上下文开 MTP；超长文档改用 `start-server-nospec.cmd`。
+
 
 # llama.cpp
 
