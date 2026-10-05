@@ -34,6 +34,16 @@ env:
   LLAMA_ARG_LOG_TIMESTAMPS: 1
 
 jobs:
+  # Upstream (ggml-org/llama.cpp) disabled the CANN job to save CI resources and left `jobs:`
+  # empty, which GitHub reports as "Invalid workflow file … Unexpected value ''". Keep an
+  # explicit no-op so this file parses; the real job below stays commented out, exactly as
+  # upstream left it (see ggml-org/llama.cpp PR #23705).
+  upstream-cann-disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CANN CI is disabled upstream
+        run: echo "The CANN build job is commented out upstream; nothing to do."
+
 # TODO: this build is disabled to save Github Actions resources (https://github.com/ggml-org/llama.cpp/pull/23705)
 #       in order to enable it again, we have to provision dedicated runners  to run it
 #  openEuler-latest-cann:
